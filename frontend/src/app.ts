@@ -2,7 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Api } from './api';
-import { Comment, Context, Project, Task, TaskDetail, TaskStatus } from './models';
+import { AttentionItem, AttentionReason, Comment, Context, Project, Task, TaskDetail, TaskStatus } from './models';
 
 @Component({
   selector: 'app-root',
@@ -17,6 +17,9 @@ export class AppComponent {
   project = signal<Project | null>(null);
   tasks = signal<Task[]>([]);
   detail = signal<TaskDetail | null>(null);
+  view = signal<'attention' | 'project'>('attention');
+  attention = signal<AttentionItem[]>([]);
+  attentionLoading = signal(false);
   loading = signal(false);
   saving = signal(false);
   error = signal('');
@@ -32,6 +35,10 @@ export class AppComponent {
     { value: 'open', label: 'Открыта' }, { value: 'in_progress', label: 'В работе' },
     { value: 'blocked', label: 'Заблокирована' }, { value: 'done', label: 'Готово' },
   ];
+  readonly reasonLabels: Record<AttentionReason, string> = {
+    overdue: 'Просрочена', blocked: 'Заблокирована', awaiting_reaction: 'Ждёт реакции',
+    due_soon: 'Скоро срок', unassigned: 'Без исполнителя', stale: 'Нет движения',
+  };
 
   constructor() { void this.load(); }
 
@@ -40,6 +47,8 @@ export class AppComponent {
     this.loading.set(true);
     this.error.set('');
     this.closeDetail();
+    this.project.set(null);
+    this.tasks.set([]);
     try {
       const [context, projects] = await Promise.all([
         this.api.request<Context>('/context'), this.api.request<Project[]>('/projects'),
@@ -47,13 +56,13 @@ export class AppComponent {
       if (generation !== this.generation) return;
       this.context.set(context);
       this.projects.set(projects);
-      const project = projects.find(p => p.id === this.project()?.id) ?? projects[0];
-      if (project) await this.selectProject(project);
+      this.view.set('attention');
     } catch (error) {
       if (generation === this.generation) this.fail(error);
     } finally {
       if (generation === this.generation) this.loading.set(false);
     }
+    if (generation === this.generation) await this.loadAttention();
   }
 
   switchUser(value: string): void {
@@ -71,6 +80,7 @@ export class AppComponent {
     this.loading.set(true);
     this.error.set('');
     this.notice.set('');
+    this.view.set('project');
     this.project.set(project);
     this.tasks.set([]);
     this.status = '';
@@ -90,6 +100,36 @@ export class AppComponent {
     return this.tasks().filter(task => (!this.status || task.status === this.status)
       && task.title.toLocaleLowerCase('ru').includes(this.search.toLocaleLowerCase('ru')));
   }
+
+  showAttention(): void {
+    this.closeDetail();
+    this.view.set('attention');
+    void this.loadAttention();
+  }
+
+  async loadAttention(): Promise<void> {
+    const generation = ++this.generation;
+    this.attentionLoading.set(true);
+    this.error.set('');
+    try {
+      const items = await this.api.request<AttentionItem[]>('/overview');
+      if (generation === this.generation) this.attention.set(items);
+    } catch (error) {
+      if (generation === this.generation) this.fail(error);
+    } finally {
+      if (generation === this.generation) this.attentionLoading.set(false);
+    }
+  }
+
+  async openAttention(item: AttentionItem): Promise<void> {
+    const project = this.projects().find(p => p.id === item.project_id);
+    if (!project) return;
+    await this.selectProject(project);
+    const task = this.tasks().find(t => t.id === item.id);
+    if (task) await this.openTask(task);
+  }
+
+  reasonLabel(reason: AttentionReason): string { return this.reasonLabels[reason]; }
 
   async openTask(task: Task): Promise<void> {
     const generation = ++this.detailGeneration;

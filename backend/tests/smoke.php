@@ -18,6 +18,7 @@ $base = 'http://' . $address;
 $environment = getenv();
 $environment['DB_PATH'] = $directory . '/test.sqlite';
 $environment['SEED_NOW'] = '2026-11-11T08:00:00Z';
+$environment['APP_NOW'] = '2026-11-11T08:00:00Z';
 $process = proc_open([PHP_BINARY, '-S', $address, __DIR__ . '/../router.php'],
     [0 => ['pipe', 'r'], 1 => ['file', $directory . '/server.log', 'a'], 2 => ['file', $directory . '/server.log', 'a']],
     $pipes, dirname(__DIR__, 2), $environment);
@@ -111,6 +112,20 @@ try {
     [$status, $response] = request('GET', '/api/tasks/' . $task['id']);
     check($response['data']['status'] === 'done' && count($response['data']['comments']) === 1, 'changes persist across requests');
     check($response['data']['comments'][0]['body'] === '<script>window.pwned=1</script>', 'comment content retained as plain data');
+    [$status, $response] = request('GET', '/api/overview');
+    $attention = array_column($response['data'], null, 'id');
+    check($status === 200 && array_column($response['data'], 'id') === [5, 2, 1, 6, 7],
+        'attention overview is urgent-first and skips done, archive and quiet tasks');
+    check($attention[5]['reasons'] === ['overdue', 'blocked', 'awaiting_reaction', 'stale'], 'task 5 carries every attention reason in urgency order');
+    check($attention[2]['reasons'] === ['overdue', 'awaiting_reaction'], 'overdue task with fresh discussion is surfaced');
+    check($attention[1]['reasons'] === ['blocked', 'awaiting_reaction', 'due_soon'], 'blocked task near deadline is surfaced');
+    check($attention[6]['reasons'] === ['awaiting_reaction'], 'routine report newer than task state still surfaces without text analysis');
+    check($attention[7]['reasons'] === ['awaiting_reaction', 'unassigned'], 'unassigned task with an open question is surfaced');
+    check($attention[7]['project_name'] === 'Автоматизация отчётности', 'attention rows carry the project name');
+    check(array_column(request('GET', '/api/overview', null, 2)[1]['data'], 'id') === [5, 2, 1, 6, 7], 'Boris gets his own attention overview');
+    $vera = request('GET', '/api/overview', null, 3)[1]['data'];
+    check(array_column($vera, 'id') === [2, 11, 1], 'Vera sees her projects, including the task hidden from Anna');
+    check($vera[1]['reasons'] === ['overdue', 'blocked'], 'attention reasons are computed the same way for every persona');
     [$status, $response] = request('GET', '/api/projects/1/tasks');
     check(count($response['data']) === 6, 'initialization does not duplicate or reset data');
     check(request('GET', '/api/tasks/9999')[0] === 404, 'missing task returns 404');

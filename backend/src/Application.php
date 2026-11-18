@@ -5,6 +5,16 @@ final class ApiError extends RuntimeException {}
 
 final class Application
 {
+    /** «Скоро срок»: срок наступает в пределах этого числа дней. */
+    private const DUE_SOON_DAYS = 2;
+    /** «Нет движения»: задача и обсуждение не обновлялись дольше этого числа дней. */
+    private const STALE_DAYS = 2;
+    /** Порядок причин по убыванию срочности; первая причина задаёт место в обзоре. */
+    private const REASON_RANKS = [
+        'overdue' => 0, 'blocked' => 1, 'awaiting_reaction' => 2,
+        'due_soon' => 3, 'unassigned' => 4, 'stale' => 5,
+    ];
+
     private int $userId = 1;
 
     public function __construct(private PDO $db) {}
@@ -56,6 +66,10 @@ final class Application
                 $project['members'] = $this->all('SELECT u.* FROM users u JOIN project_members m ON m.user_id=u.id WHERE m.project_id=? ORDER BY u.id', [$project['id']]);
             }
             $this->respond($projects);
+            return;
+        }
+        if ($method === 'GET' && $path === '/api/overview') {
+            $this->respond($this->overview());
             return;
         }
         if (preg_match('#^/api/projects/(\d+)/tasks$#', $path, $match)) {
@@ -209,6 +223,92 @@ final class Application
         if ($project['archived']) {
             throw new ApiError('Архивный проект доступен только для чтения', 409);
         }
+    }
+
+    /**
+     * Обзор «Требуется внимание»: задачи всех активных проектов пользователя
+     * с вычисленными причинами. Архивные проекты и завершённые задачи
+     * не попадают в выборку; доступ определяется членством в проекте.
+     * Причины строятся только по метаданным — содержание комментариев
+     * не анализируется.
+     */
+    private function overview(): array
+    {
+        $pinned = getenv('APP_NOW');
+        $now = $pinned
+            ? new DateTimeImmutable($pinned, new DateTimeZone('UTC'))
+            : new DateTimeImmutable('now', new DateTimeZone('UTC'));
+        $tasks = $this->all(
+            'SELECT t.*, p.name AS project_name FROM tasks t'
+            . ' JOIN projects p ON p.id = t.project_id'
+            . ' JOIN project_members m ON m.project_id = t.project_id'
+            . ' WHERE m.user_id = ? AND p.archived = 0 AND t.status != ? ORDER BY t.id',
+            [$this->userId, 'done']
+        );
+        $items = [];
+        foreach ($tasks as $task) {
+            $row = $this->one('SELECT MAX(created_at) AS last_at FROM comments WHERE task_id = ?', [$task['id']]);
+            $lastCommentAt = is_array($row) ? $row['last_at'] : null;
+            $reasons = $this->attentionReasons($task, $lastCommentAt, $now);
+            if ($reasons === []) {
+                continue;
+            }
+            $task['reasons'] = $reasons;
+            $items[] = $task;
+        }
+        usort($items, fn(array $a, array $b): int => $this->attentionOrder($a, $b));
+        return $items;
+    }
+
+    /** Причины внимания одной задачи; возвращаются в порядке срочности. */
+    private function attentionReasons(array $task, ?string $lastCommentAt, DateTimeImmutable $now): array
+    {
+        $nowStamp = $now->format('Y-m-d\TH:i:s\Z');
+        $dueSoon = $now->modify('+' . self::DUE_SOON_DAYS . ' days')->format('Y-m-d\TH:i:s\Z');
+        $staleBefore = $now->modify('-' . self::STALE_DAYS . ' days')->format('Y-m-d\TH:i:s\Z');
+        $reasons = [];
+        if ($task['due_at'] !== null) {
+            if ($task['due_at'] < $nowStamp) {
+                $reasons[] = 'overdue';
+            } elseif ($task['due_at'] <= $dueSoon) {
+                $reasons[] = 'due_soon';
+            }
+        }
+        if ($task['status'] === 'blocked') {
+            $reasons[] = 'blocked';
+        }
+        if ($lastCommentAt !== null && $lastCommentAt > $task['updated_at']) {
+            // Обсуждение обновилось позже задачи: возможно, кто-то ждёт решения.
+            $reasons[] = 'awaiting_reaction';
+        }
+        if ($task['assignee_id'] === null) {
+            $reasons[] = 'unassigned';
+        }
+        if ($task['updated_at'] < $staleBefore
+            && ($lastCommentAt === null || $lastCommentAt < $staleBefore)) {
+            $reasons[] = 'stale';
+        }
+        usort($reasons, fn(string $a, string $b): int => self::REASON_RANKS[$a] <=> self::REASON_RANKS[$b]);
+        return $reasons;
+    }
+
+    /** Срочный порядок: причина высшего ранга, затем более ранний срок, затем id. */
+    private function attentionOrder(array $a, array $b): int
+    {
+        $rank = self::REASON_RANKS[$a['reasons'][0]] <=> self::REASON_RANKS[$b['reasons'][0]];
+        if ($rank !== 0) {
+            return $rank;
+        }
+        if ($a['due_at'] !== $b['due_at']) {
+            if ($a['due_at'] === null) {
+                return 1;
+            }
+            if ($b['due_at'] === null) {
+                return -1;
+            }
+            return $a['due_at'] <=> $b['due_at'];
+        }
+        return (int) $a['id'] <=> (int) $b['id'];
     }
 
     private function one(string $sql, array $params = []): array|false

@@ -9,9 +9,13 @@
 </header>
 <div class="shell">
   <nav class="sidebar" aria-label="Проекты">
+    <button class="project-link attention-link" [class.selected]="view() === 'attention'" (click)="showAttention()">
+      <span class="attention-icon">◉</span><span>Требуется внимание!<small>{{attention().length ? 'задач: ' + attention().length : 'всё под контролем'}}</small></span>
+      @if (attention().length) { <span class="attention-count">{{attention().length}}</span> }
+    </button>
     <div class="nav-heading">Ваши проекты <span>{{projects().length}}</span></div>
     @for (p of projects(); track p.id) {
-      <button class="project-link" [class.selected]="project()?.id === p.id" [attr.aria-current]="project()?.id === p.id ? 'page' : null" (click)="selectProject(p)">
+      <button class="project-link" [class.selected]="view() === 'project' && project()?.id === p.id" [attr.aria-current]="view() === 'project' && project()?.id === p.id ? 'page' : null" (click)="selectProject(p)">
         <span class="project-icon">{{p.archived ? '▤' : '▧'}}</span><span>{{p.name}}<small>{{p.archived ? 'Архив' : p.task_count + ' задач'}}</small></span>
       </button>
     }
@@ -20,7 +24,30 @@
   <main>
     @if (error()) { <div role="alert" class="alert error">{{error()}}</div> }
     @if (notice()) { <div role="status" class="alert success">{{notice()}}</div> }
-    @if (project(); as p) {
+    @if (view() === 'attention') {
+      <div class="breadcrumb">Обзор <span>/</span> Все активные проекты</div>
+      <div class="page-heading"><div><h1>Требуется внимание!</h1>
+        <p>Задачи всех ваших активных проектов, где сейчас может понадобиться ваше решение.</p></div>
+      </div>
+      <section class="task-section attention-section" aria-label="Задачи, требующие внимания">
+        @if (attentionLoading()) { <div class="empty" role="status">Собираем задачи…</div> }
+        @else {
+          <div class="table-scroll"><table><thead><tr><th>Задача</th><th>Причина</th><th>Исполнитель</th><th>Статус</th><th>Срок</th><th>Проект</th></tr></thead><tbody>
+            @for (item of attention(); track item.id) {
+              <tr>
+                <td><button class="task-title" (click)="openAttention(item)"><span class="task-number">#{{item.id}}</span>{{item.title}}</button></td>
+                <td>@for (r of item.reasons; track r) { <span class="reason" [class]="'reason ' + r">{{reasonLabel(r)}}</span> }</td>
+                <td>{{userName(item.assignee_id)}}</td>
+                <td><span class="badge" [class]="'badge ' + item.status">{{statusLabel(item.status)}}</span></td>
+                <td>{{item.due_at ? (item.due_at | date:'dd.MM.yyyy HH:mm':'UTC') : 'Без срока'}}</td>
+                <td><span class="badge">{{item.project_name}}</span></td>
+              </tr>
+            } @empty { <tr><td colspan="6" class="empty">Задач, требующих внимания, нет — проекты идут по плану.</td></tr> }
+          </tbody></table></div>
+        }
+      </section>
+      <p class="footnote">Обзор собирается по активным проектам; архив и завершённые задачи не учитываются. Причины определяются сроками, статусами и обновлениями обсуждений. Время в UTC.</p>
+    } @else if (project(); as p) {
       <div class="breadcrumb">Проекты <span>/</span> {{p.archived ? 'Архив' : 'Рабочее пространство'}}</div>
       <div class="page-heading"><div><h1>{{p.name}}</h1><p>{{p.description}}</p></div>
         @if (!p.archived) { <button class="primary" (click)="createTask()" [disabled]="loading() || saving()">＋ Новая задача</button> }
