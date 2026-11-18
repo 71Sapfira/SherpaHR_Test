@@ -4,4 +4,6 @@ export type TaskStatus = 'open' | 'in_progress' | 'blocked' | 'done';
 export interface Task { id: number; project_id: number; title: string; description: string; status: TaskStatus; assignee_id: number | null; due_at: string | null; updated_at: string; version: number }
 export interface Comment { id: number; task_id: number; user_id: number; body: string; created_at: string; author: string }
 export interface TaskDetail extends Task { comments: Comment[] }
+export type AttentionReason = 'overdue' | 'blocked' | 'awaiting_reaction' | 'due_soon' | 'unassigned' | 'stale';
+export interface AttentionItem extends Task { project_name: string; reasons: AttentionReason[] }
 export interface Context { user: User; users: User[]; server_now: string; seeded_at: string }

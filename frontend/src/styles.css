@@ -146,6 +146,34 @@ input:focus,select:focus,textarea:focus {
   margin-top:70px;
   padding:12px;
 }
+.attention-link {
+  color:#b13526;
+}
+.attention-icon {
+  color:#c4372c;
+  font-size:19px;
+}
+.attention-link small {
+  color:#c9756a;
+}
+.attention-link.selected {
+  background:#fdf1ef;
+  border-color:#f2cfc9;
+  color:#983c30;
+}
+.attention-link.selected .attention-icon {
+  color:#983c30;
+}
+.attention-count {
+  margin-left:auto;
+  align-self:center;
+  background:#c4372c;
+  color:#fff;
+  font-size:11px;
+  font-weight:600;
+  border-radius:10px;
+  padding:2px 8px;
+}
 main {
   flex:1;
   min-width:0;
@@ -293,6 +321,35 @@ tr:last-child td {
 .badge.done {
   background:#eaf5ed;
   color:#386e47;
+}
+.reason {
+  display:inline-block;
+  font-size:11px;
+  padding:3px 8px;
+  border-radius:5px;
+  margin:1px 6px 1px 0;
+  background:#eef1f4;
+  color:#596671;
+}
+.reason.overdue {
+  background:#fbe9e6;
+  color:#983c30;
+  font-weight:600;
+}
+.reason.blocked {
+  background:#fff0e6;
+  color:#9a4d17;
+}
+.reason.awaiting_reaction,.reason.due_soon {
+  background:#fff6df;
+  color:#8a6a12;
+}
+.reason.unassigned,.reason.stale {
+  background:#eef1f4;
+  color:#596671;
+}
+.attention-section {
+  margin-top:26px;
 }
 .footnote {
   color:#919ba3;
