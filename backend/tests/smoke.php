@@ -73,6 +73,8 @@ try {
     check(array_column($response['data'], 'id') === [1, 2, 4], 'Boris has different membership');
     [$status, $response] = request('GET', '/api/projects', null, 3);
     check(array_column($response['data'], 'id') === [1, 3, 5], 'Vera can see her separate project');
+    [$status, $response] = request('GET', '/api/projects/2/tasks');
+    check($status === 200 && in_array(7, array_column($response['data'], 'id'), true), 'unassigned tasks are listed');
     check(request('GET', '/api/projects', null, 999)[0] === 401, 'unknown persona rejected');
     check(request('GET', '/api/projects/5/tasks')[0] === 404, 'hidden project is not disclosed');
     check(request('GET', '/api/tasks/11')[0] === 404, 'hidden task is not disclosed');
